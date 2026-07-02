@@ -1,75 +1,63 @@
+```markdown
 # Fab Maintenance RAG
 
-Local retrieval-augmented Q&A over fab equipment manuals and maintenance logs.
-Runs **fully offline** via Ollama — no proprietary data ever leaves the machine.
+Local RAG assistant for semiconductor/fab equipment manuals. Fully offline — no cloud APIs, no data leaves the machine.
 
-## Features
+## Stack
+- **Embeddings**: sentence-transformers (all-MiniLM-L6-v2)
+- **Vector store**: ChromaDB (persistent, local)
+- **LLM**: Ollama (llama3.2)
+- **PDF parsing**: pdfplumber (table-aware extraction)
+- **UI**: Streamlit, multi-turn chat
 
-- 📄 **PDF ingestion with table extraction** — `pdfplumber` extracts both prose and tables (maintenance schedules, spec sheets, torque values)
-- 🧠 **Multi-turn chat** — Streamlit session history passed to the LLM so follow-up questions resolve pronouns and context correctly
-- 🔍 **Context-aware retrieval** — last user turn is prepended to the embedding query for better pronoun/coreference resolution
-- 🔒 **100% local** — Ollama LLM + ChromaDB vector store + sentence-transformers embeddings, no cloud APIs
-
-## Requirements
-
-- [Ollama](https://ollama.com) installed and running (`ollama serve`)
-- Python 3.10+
+## Why local
+Fab documentation is often confidential. This architecture proves the RAG pattern works with zero external API calls — relevant for semiconductor/industrial environments with data residency constraints.
 
 ## Setup
-
 ```bash
-# 1. Pull the LLM (one-time download, runs locally)
-ollama pull llama3.2
-
-# 2. Install Python dependencies
 pip install -r requirements.txt
+ollama pull llama3.2
+```
 
-# 3. Drop your PDFs / text logs into data/
-#    (folder is gitignored — proprietary docs stay local)
-
-# 4. Ingest documents into the vector store
+## Usage
+```bash
+# 1. Drop PDFs/docs into data/
+# 2. Ingest
 python ingest.py
 
-# 5. Launch the chat UI
+# 3. Run
 streamlit run app.py
 ```
 
-Open **http://localhost:8501** in your browser.
-
-## Re-ingesting after adding new documents
-
-```powershell
-# Windows PowerShell — stop the app first, then:
-Remove-Item -Recurse -Force vectordb
+## Re-ingest (after changing chunking/extraction logic)
+```bash
+rmdir /s /q vectordb   # Windows
+rm -rf vectordb         # macOS/Linux
 python ingest.py
 ```
 
-## Project layout
-
+## Architecture
 ```
-fab-maintenance-rag/
-├── ingest.py       # Load → chunk → embed → upsert into ChromaDB
-├── query.py        # Embed question → retrieve chunks → LLM answer
-├── app.py          # Streamlit multi-turn chat UI
-├── requirements.txt
-├── data/           # Source documents (gitignored)
-└── vectordb/       # Persisted ChromaDB index (gitignored)
+PDF → pdfplumber (text + tables) → chunk (800/150 overlap)
+    → MiniLM embed → ChromaDB
+Query → embed → top-k retrieve → context + history → llama3.2 → grounded answer
 ```
 
-## Configuration
-
-Key constants in `query.py`:
-
-| Variable | Default | Description |
+## Config (query.py)
+| Param | Value | Notes |
 |---|---|---|
-| `MODEL` | `llama3.2` | Ollama model name (`llama3.2:1b` for faster CPU inference) |
-| `TOP_K` | `5` | Number of chunks retrieved per query |
-| `MAX_TOKENS` | `300` | Max LLM output tokens |
-| `CHARS_PER_CHUNK` | `900` | Characters of each chunk fed to the LLM |
-| `MAX_HISTORY` | `6` | Conversation turns kept in context |
+| MODEL | llama3.2 | swap to `llama3.2:1b` for CPU speed, weaker grounding |
+| TOP_K | 5 | chunks retrieved per query |
+| CHARS_PER_CHUNK | 900 | context trimmed per chunk |
+| MAX_HISTORY | 6 | turns kept for multi-turn context |
 
-## Safety notes
+## Grounding
+System prompt restricts answers to retrieved context + conversation transcript only. No answer without a source citation — prevents hallucinated maintenance procedures, a real safety concern for equipment servicing.
 
-- **Grounded-only prompt**: the LLM is instructed to answer only from retrieved context and say so explicitly when the answer isn't present — prevents hallucinated maintenance procedures.
-- `data/` and `vectordb/` are gitignored so proprietary fab docs never leak into a public repo.
-- Inference and retrieval are fully local (Ollama + ChromaDB + sentence-transformers).
+## Data
+`data/` and `vectordb/` are gitignored — no proprietary docs ship with the repo. Demo uses a public Edwards nXDS Scroll Pump manual (industrial vacuum equipment used in fab support systems).
+
+## Limitations
+- Table extraction depends on PDF structure quality; scanned/image PDFs need OCR (not implemented)
+- CPU inference: ~5-20s/query. GPU (CUDA) drops this to ~2-4s.
+```
