@@ -1,17 +1,19 @@
 ```markdown
-# Fab Maintenance RAG
+# Local RAG Assistant
 
-Local RAG assistant for semiconductor/fab equipment manuals. Fully offline — no cloud APIs, no data leaves the machine.
+General-purpose local RAG (Retrieval-Augmented Generation) system. Ingest any PDFs/docs → query in natural language → grounded, source-cited answers. Fully offline.
+
+Demo dataset: semiconductor fab equipment manual (Edwards nXDS pump) — swap `data/` for any domain.
 
 ## Stack
-- **Embeddings**: sentence-transformers (all-MiniLM-L6-v2)
-- **Vector store**: ChromaDB (persistent, local)
-- **LLM**: Ollama (llama3.2)
-- **PDF parsing**: pdfplumber (table-aware extraction)
-- **UI**: Streamlit, multi-turn chat
+- Embeddings: sentence-transformers (all-MiniLM-L6-v2)
+- Vector store: ChromaDB (local, persistent)
+- LLM: Ollama (llama3.2)
+- PDF parsing: pdfplumber (table-aware)
+- UI: Streamlit, multi-turn chat
 
 ## Why local
-Fab documentation is often confidential. This architecture proves the RAG pattern works with zero external API calls — relevant for semiconductor/industrial environments with data residency constraints.
+No cloud API calls. Applicable to any confidential-document use case — fab manuals, internal SOPs, legal docs, medical records.
 
 ## Setup
 ```bash
@@ -21,43 +23,41 @@ ollama pull llama3.2
 
 ## Usage
 ```bash
-# 1. Drop PDFs/docs into data/
-# 2. Ingest
+# drop any PDFs into data/
 python ingest.py
-
-# 3. Run
 streamlit run app.py
 ```
 
-## Re-ingest (after changing chunking/extraction logic)
+## Re-ingest
 ```bash
-rmdir /s /q vectordb   # Windows
-rm -rf vectordb         # macOS/Linux
+rm -rf vectordb   # or rmdir /s /q vectordb on Windows
 python ingest.py
 ```
 
 ## Architecture
 ```
-PDF → pdfplumber (text + tables) → chunk (800/150 overlap)
-    → MiniLM embed → ChromaDB
+PDF → pdfplumber (text + tables) → chunk (800/150 overlap) → MiniLM embed → ChromaDB
 Query → embed → top-k retrieve → context + history → llama3.2 → grounded answer
 ```
 
 ## Config (query.py)
-| Param | Value | Notes |
-|---|---|---|
-| MODEL | llama3.2 | swap to `llama3.2:1b` for CPU speed, weaker grounding |
-| TOP_K | 5 | chunks retrieved per query |
-| CHARS_PER_CHUNK | 900 | context trimmed per chunk |
-| MAX_HISTORY | 6 | turns kept for multi-turn context |
+| Param | Value |
+|---|---|
+| MODEL | llama3.2 |
+| TOP_K | 5 |
+| CHARS_PER_CHUNK | 900 |
+| MAX_HISTORY | 6 |
 
 ## Grounding
-System prompt restricts answers to retrieved context + conversation transcript only. No answer without a source citation — prevents hallucinated maintenance procedures, a real safety concern for equipment servicing.
+Answers restricted to retrieved context + conversation transcript. No source → no answer. Prevents hallucination regardless of domain.
+
+## Example use case (included)
+Edwards nXDS Scroll Pump manual (public, fab support equipment) — demonstrates domain-specific technical Q&A: specs, maintenance intervals, fault codes.
 
 ## Data
-`data/` and `vectordb/` are gitignored — no proprietary docs ship with the repo. Demo uses a public Edwards nXDS Scroll Pump manual (industrial vacuum equipment used in fab support systems).
+`data/` + `vectordb/` gitignored — bring your own docs, none ship with repo.
 
 ## Limitations
-- Table extraction depends on PDF structure quality; scanned/image PDFs need OCR (not implemented)
-- CPU inference: ~5-20s/query. GPU (CUDA) drops this to ~2-4s.
+- Table extraction quality depends on PDF structure; scanned docs need OCR (not implemented)
+- CPU inference: ~5-20s/query; GPU drops to ~2-4s
 ```
