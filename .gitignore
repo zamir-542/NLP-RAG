@@ -1,0 +1,4 @@
+data/
+vectordb/
+__pycache__/
+*.pyc

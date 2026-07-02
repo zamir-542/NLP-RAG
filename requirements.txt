@@ -1,0 +1,6 @@
+pdfplumber
+sentence-transformers
+chromadb
+ollama
+streamlit
+cryptography
